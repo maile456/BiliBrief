@@ -1,10 +1,9 @@
 """Normalize ordinary Bilibili share links to a video and a single part."""
 
-import json
 import re
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urljoin, urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 _ID = r"(BV[0-9A-Za-z]{10}|av[0-9]+)"
 _HOSTS = {"bilibili.com", "www.bilibili.com", "m.bilibili.com"}
@@ -46,17 +45,3 @@ def normalize(value: str, page: int | None = None) -> tuple[str, int]:
     if not 1 <= chosen <= 10000:
         raise ValueError("分 P 编号须在 1 至 10000 之间。")
     return "https://www.bilibili.com/video/" + match[1], chosen
-
-
-def list_parts(bvid: str) -> list[dict]:
-    if not re.fullmatch(r"BV[A-Za-z0-9]{10}", bvid):
-        return []
-    req = Request(f"https://api.bilibili.com/x/player/pagelist?bvid={bvid}",
-                  headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.bilibili.com/"})
-    try:
-        with urlopen(req, timeout=8) as response:
-            rows = json.load(response).get("data") or []
-        return [{"page": r["page"], "cid": r["cid"], "title": r.get("part", ""),
-                 "duration": r.get("duration")} for r in rows]
-    except (ValueError, KeyError, TypeError, OSError):
-        return []
