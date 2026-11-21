@@ -124,6 +124,10 @@ def _yt_dlp_captions(url: str, page: int, settings: Settings) -> list[str]:
             info = session.extract_info(requested, download=False)
     except Exception as exc:
         raise CaptionError(f"B 站字幕请求失败（{type(exc).__name__}）。") from None
+    expected_id = parts.path.rstrip("/").rsplit("/", 1)[-1]
+    actual_id = str(info.get("id") or "").split("_p", 1)[0]
+    if actual_id != expected_id:
+        raise CaptionError("B 站返回的视频身份与请求不一致。")
     candidates: list[tuple[tuple[bool, bool, bool, str], str, dict]] = []
     for group, automatic in ((info.get("subtitles") or {}, False), (info.get("automatic_captions") or {}, True)):
         if not isinstance(group, dict):
@@ -146,6 +150,12 @@ def _yt_dlp_captions(url: str, page: int, settings: Settings) -> list[str]:
 
 
 def fetch_caption_lines(url: str, page: int, settings: Settings) -> list[str]:
+    # yt-dlp's Bilibili extractor handles the current WBI-signed subtitle API.
+    # Use it first so an older player endpoint cannot return a stale track.
+    signed_lines = _yt_dlp_captions(url, page, settings)
+    if signed_lines:
+        return signed_lines
+
     video_id = urlsplit(url).path.rsplit("/", 1)[-1]
     video = {"aid": video_id[2:]} if video_id.startswith("av") else {"bvid": video_id}
     options = {"quiet": True, "no_warnings": True, "logtostderr": True, "socket_timeout": 12}

@@ -21,6 +21,7 @@ def ok(data):
 class CaptionTests(unittest.TestCase):
     def setUp(self):
         factory = self.enterContext(patch("vidbrief.captions.YoutubeDL"))
+        self.enterContext(patch("vidbrief.captions._yt_dlp_captions", return_value=[]))
         self.session = factory.return_value.__enter__.return_value
 
     def responses(self, *data):
