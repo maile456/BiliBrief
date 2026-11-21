@@ -12,6 +12,7 @@ import json
 import os
 import tempfile
 import time
+from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
@@ -57,10 +58,14 @@ def _request_json(url: str) -> dict[str, Any]:
     try:
         with urlopen(request, timeout=_TIMEOUT) as response:
             value = json.load(response)
+            set_cookie = response.headers.get_all("Set-Cookie") or []
     except (HTTPError, URLError, OSError, ValueError):
         raise LoginError("B 站登录请求失败，请稍后重试。") from None
     if not isinstance(value, dict):
         raise LoginError("B 站登录响应格式异常。")
+    # The successful poll response commonly carries SESSDATA in Set-Cookie
+    # instead of putting it in the callback URL.
+    value["_set_cookie_headers"] = set_cookie
     return value
 
 
@@ -93,6 +98,25 @@ def _extract_sessdata(login_url: str) -> str:
     return value
 
 
+def _extract_sessdata_from_headers(headers: object) -> str:
+    if not isinstance(headers, list):
+        return ""
+    for raw in headers:
+        if not isinstance(raw, str):
+            continue
+        cookie = SimpleCookie()
+        try:
+            cookie.load(raw)
+        except (TypeError, ValueError):
+            continue
+        morsel = cookie.get("SESSDATA")
+        if morsel is not None and morsel.value and not any(
+            char in morsel.value for char in "\r\n;\t"
+        ):
+            return morsel.value
+    return ""
+
+
 def poll_once(qr_key: str, request: Callable[[str], dict[str, Any]] = _request_json) -> tuple[str, str | None]:
     """Return (state, sessdata), where state is pending, scanned, or success."""
     url = f"{_POLL}?{urlencode({'qrcode_key': qr_key, 'source': _SOURCE})}"
@@ -103,9 +127,15 @@ def poll_once(qr_key: str, request: Callable[[str], dict[str, Any]] = _request_j
     code = data.get("code") if isinstance(data, dict) else None
     if code == _SUCCESS and isinstance(data, dict):
         login_url = data.get("url")
-        if not isinstance(login_url, str):
-            raise LoginError("B 站登录结果格式异常。")
-        return "success", _extract_sessdata(login_url)
+        if isinstance(login_url, str):
+            try:
+                return "success", _extract_sessdata(login_url)
+            except LoginError:
+                pass
+        sessdata = _extract_sessdata_from_headers(response.get("_set_cookie_headers"))
+        if sessdata:
+            return "success", sessdata
+        raise LoginError("B 站登录结果中没有有效的会话。")
     if code == _NOT_SCANNED:
         return "pending", None
     if code == _SCANNED:
@@ -205,3 +235,7 @@ def main() -> None:
         return
     print("B 站登录状态已保存到本机。")
     del path
+
+
+if __name__ == "__main__":
+    main()

@@ -22,6 +22,13 @@ class LoginTests(unittest.TestCase):
         self.assertEqual(poll_once("key", lambda _url: scanned), ("scanned", None))
         self.assertEqual(poll_once("key", lambda _url: success), ("success", "fixture-token"))
 
+        header_success = {
+            "code": 0,
+            "data": {"code": 0, "url": "https://passport.bilibili.com/h5-app/passport/login/scan"},
+            "_set_cookie_headers": ["SESSDATA=header-token; Domain=.bilibili.com; Path=/"],
+        }
+        self.assertEqual(poll_once("key", lambda _url: header_success), ("success", "header-token"))
+
     def test_expired_and_bad_qr_are_errors(self):
         expired = {"code": 0, "data": {"code": 86038, "message": "已过期"}}
         with self.assertRaises(LoginExpired):
