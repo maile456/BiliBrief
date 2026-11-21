@@ -1,7 +1,8 @@
 """Read one Bilibili subtitle track through the site's player APIs."""
 
 import json
-from urllib.parse import urlencode, urlsplit
+import re
+from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
 from yt_dlp import YoutubeDL
 from yt_dlp.networking import Request
@@ -62,6 +63,88 @@ def _track_url(track):
     return url
 
 
+def _subtitle_lines(raw: object, ext: str) -> list[str]:
+    """Convert one yt-dlp subtitle payload to ordered plain-text lines."""
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8-sig", errors="replace")
+    if not isinstance(raw, str):
+        raise CaptionError("B 站返回的字幕正文格式异常。")
+    if ext.lower() in {"json", "json3"}:
+        try:
+            value = json.loads(raw)
+            body = value.get("body") if isinstance(value, dict) else None
+            if not isinstance(body, list):
+                raise ValueError
+            cues = sorted(body, key=lambda cue: float(cue["from"]))
+            return [str(cue["content"]).strip() for cue in cues if str(cue.get("content", "")).strip()]
+        except (AttributeError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            raise CaptionError("B 站返回的字幕正文格式异常。") from None
+
+    lines: list[str] = []
+    rows = raw.lstrip("\ufeff").splitlines()
+    for index, row in enumerate(rows):
+        if "-->" not in row:
+            continue
+        index += 1
+        cue: list[str] = []
+        while index < len(rows) and rows[index].strip():
+            value = re.sub(r"<[^>]+>", "", rows[index]).strip()
+            if value:
+                cue.append(value)
+            index += 1
+        if cue:
+            lines.append(" ".join(cue))
+    if not lines:
+        raise CaptionError("B 站返回的字幕正文格式异常。")
+    return lines
+
+
+def _yt_dlp_captions(url: str, page: int, settings: Settings) -> list[str]:
+    """Let yt-dlp's Bilibili extractor handle the current WBI subtitle API."""
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    if page > 1:
+        query["p"] = str(page)
+    requested = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+    options = {
+        "quiet": True,
+        "no_warnings": True,
+        "logtostderr": True,
+        "skip_download": True,
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "socket_timeout": 15,
+    }
+    if settings.cookies_file:
+        options["cookiefile"] = str(settings.cookies_file)
+    if settings.cookies_from_browser:
+        options["cookiesfrombrowser"] = tuple(settings.cookies_from_browser.split(":"))
+    try:
+        with YoutubeDL(options) as session:
+            info = session.extract_info(requested, download=False)
+    except Exception as exc:
+        raise CaptionError(f"B 站字幕请求失败（{type(exc).__name__}）。") from None
+    candidates: list[tuple[tuple[bool, bool, bool, str], str, dict]] = []
+    for group, automatic in ((info.get("subtitles") or {}, False), (info.get("automatic_captions") or {}, True)):
+        if not isinstance(group, dict):
+            continue
+        for language, formats in group.items():
+            if not isinstance(language, str) or not isinstance(formats, list):
+                continue
+            normalized = language.lower().replace("_", "-").removeprefix("ai-")
+            chinese = normalized.split("-")[0] in {"zh", "cmn", "yue"}
+            preferred = normalized in {"zh", "zh-hans", "zh-cn"}
+            for track in formats:
+                if isinstance(track, dict) and track.get("data"):
+                    ext = str(track.get("ext", "srt"))
+                    priority = (not chinese, automatic, not preferred, normalized)
+                    candidates.append((priority, ext, track))
+    if not candidates:
+        return []
+    _, ext, track = min(candidates, key=lambda item: item[0])
+    return _subtitle_lines(track["data"], ext)
+
+
 def fetch_caption_lines(url: str, page: int, settings: Settings) -> list[str]:
     video_id = urlsplit(url).path.rsplit("/", 1)[-1]
     video = {"aid": video_id[2:]} if video_id.startswith("av") else {"bvid": video_id}
@@ -94,7 +177,7 @@ def fetch_caption_lines(url: str, page: int, settings: Settings) -> list[str]:
         if not tracks:
             return []
         if not available:
-            raise CaptionError("B 站字幕轨缺少下载地址。")
+            return _yt_dlp_captions(url, page, settings)
         track = min(available, key=_priority)
         caption = _json(session, _track_url(track), url)
 
