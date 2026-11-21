@@ -13,6 +13,11 @@ dependencies = [
   "yt-dlp>=2025.1.15",
 ]
 
+[project.optional-dependencies]
+login = [
+  "segno>=1.6,<2",
+]
+
 [project.scripts]
 bilibrief = "vidbrief.server:main"
 vidbrief = "vidbrief.server:main"

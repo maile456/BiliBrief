@@ -18,7 +18,32 @@ python -m venv .venv
 
 在 MCP 客户端添加一个 **stdio** 服务，启动命令填写最后一行输出的 Python 绝对路径，参数为 `["-m", "bilibrief"]`。macOS 和 Linux 使用 `.venv/bin/python`。
 
-部分平台字幕需要登录。可在项目根目录的 `.env` 中将 `VIDBRIEF_COOKIES_FILE` 设为你自己的 Cookie 文件路径，也可用 `VIDBRIEF_COOKIES_FROM_BROWSER` 指定本机浏览器。
+## 登录 B 站
+
+部分视频的字幕需要登录。你可以任选一种方式。
+
+### B 站 App 扫码
+
+安装登录扩展并运行登录命令。程序只在本机窗口显示二维码，登录成功后只把会话保存到当前用户目录。
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[login]"
+.\.venv\Scripts\python.exe -m vidbrief.login
+```
+
+默认保存到 `%LOCALAPPDATA%\BiliBrief\bilibili.cookies.txt`。BiliBrief 会自动读取这个文件。
+
+### 使用浏览器 Cookie
+
+也可以在项目根目录的 `.env` 中指定 Cookie 文件，或者指定浏览器名称和配置目录。
+
+```dotenv
+VIDBRIEF_COOKIES_FILE=C:\path\to\bilibili.cookies.txt
+# 例如 chrome、edge，或 chrome:Profile 这样的 yt-dlp 格式
+VIDBRIEF_COOKIES_FROM_BROWSER=
+```
+
+Cookie 只用于请求字幕，不会放进 MCP 返回内容。
 
 ## 使用
 

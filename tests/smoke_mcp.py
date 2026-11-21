@@ -14,6 +14,7 @@ async def verify(video: str | None) -> None:
     keys = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "SYSTEMROOT",
             "TMP", "PYTHONUTF8", "VIDBRIEF_COOKIES_FILE", "VIDBRIEF_COOKIES_FROM_BROWSER")
     env = {key: os.environ[key] for key in keys if key in os.environ}
+    env["PYTHONUTF8"] = "1"
     params = StdioServerParameters(command=sys.executable, args=["-m", "bilibrief"], env=env)
     async with stdio_client(params) as (reader, writer):
         async with ClientSession(reader, writer, read_timeout_seconds=timedelta(minutes=1)) as session:
@@ -33,7 +34,12 @@ async def verify(video: str | None) -> None:
                 return
 
             response = await session.call_tool("bili_subtitles", {"url": video})
-            assert not response.isError, response.content
+            if response.isError:
+                message = " ".join(item.text for item in response.content if item.type == "text")
+                if "需要登录" in message:
+                    print("Video subtitle access requires a Bilibili login", flush=True)
+                    return
+                raise AssertionError(response.content)
             assert len(response.content) == 1 and response.content[0].type == "text"
             assert response.structuredContent is None
             text = response.content[0].text
