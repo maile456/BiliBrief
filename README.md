@@ -45,6 +45,12 @@ VIDBRIEF_COOKIES_FROM_BROWSER=
 
 Cookie 只用于请求字幕，不会放进 MCP 返回内容。
 
+### F12 控制台导出可见 Cookie
+
+项目还提供了 [控制台脚本](tools/bilibili-console-export.js)。在已登录的 B 站页面按 F12，打开 Console，粘贴脚本并回车，它会下载 `bilibili-visible-cookies.txt`。
+
+浏览器不会让网页 JavaScript 读取 `HttpOnly` Cookie。B 站的 `SESSDATA` 通常属于这一类，所以控制台脚本可能只能导出可见 Cookie，文件仍然缺少字幕登录所需的会话。需要完整登录状态时，优先使用上面的扫码登录，或在 DevTools 的 Application → Cookies 中手动复制 `SESSDATA`。
+
 ## 使用
 
 > 读取〈B 站链接〉的字幕，请告诉我作者想解决什么问题，举了哪些例子。
